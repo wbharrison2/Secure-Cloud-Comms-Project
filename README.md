@@ -1,160 +1,153 @@
-# Project 3 — Secure Cloud-to-Cloud Communication
-**Author:** Wilton B. Harrison  
-**Stack:** Terraform · AWS VPC Peering · KMS · IAM STS · Python · Boto3  
-**Tier:** Cloud Security Engineer Portfolio Project
+# Enterprise Project 6 — Zero-Trust Security Operations Platform
+**Author:** Wilton B. Harrison
+**Stack:** Terraform · AWS Transit Gateway · Security Hub · OpenSearch · Kinesis · GuardDuty · Lambda · Config
+**Tier:** Enterprise Cloud Security Engineer Portfolio Project
+**Source Project:** [Project 3 — Secure Cloud-to-Cloud Communication](https://github.com/wbharrison2/Secure-Cloud-Comms-Project)
 
 ---
 
 ## Overview
 
-This project establishes **encrypted, authenticated, zero-trust communication between two isolated AWS VPCs** — simulating secure connectivity between a production environment (VPC A) and a security operations center (VPC B). No traffic traverses the public internet. All data is encrypted at rest and in transit using AWS KMS. All cross-VPC access is controlled via IAM role assumption with ExternalId conditions.
-
-This pattern is used in real enterprises to connect separate cloud environments, business units, accounts, or compliance zones without exposing sensitive data to public routing.
+This project builds an **enterprise zero-trust security operations center (SecOps)** across multiple VPCs. It evolves Project 3's two-VPC peering pattern into a full hub-and-spoke topology with Transit Gateway, centralized SIEM (OpenSearch), Kinesis log streaming pipeline, continuous compliance (AWS Config), Security Hub consolidated findings, and automated incident response via EventBridge + Lambda.
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    AWS Account (Single Region)                        │
-│                                                                      │
-│   VPC A — PRODUCTION (10.10.0.0/16)                                 │
-│   ┌──────────────────────────────────┐                              │
-│   │  Private Subnet 10.10.1.0/24     │                              │
-│   │  ┌───────────────────────────┐   │                              │
-│   │  │ EC2 / ECS Production App  │   │                              │
-│   │  │  - Runs secure_log_       │   │                              │
-│   │  │    forwarder.py           │   │                              │
-│   │  │  - Assumes cross-VPC role │   │                              │
-│   │  │  - Sends KMS-encrypted    │   │                              │
-│   │  │    logs via VPC Peering   │   │                              │
-│   │  └───────────────────────────┘   │                              │
-│   │  SG: allow egress 5044/443       │                              │
-│   │       to VPC B CIDR only         │                              │
-│   └────────────┬─────────────────────┘                              │
-│                │                                                     │
-│         VPC Peering Connection                                       │
-│         (private, no internet)                                       │
-│         VPC Flow Logs → CloudWatch                                   │
-│                │                                                     │
-│   VPC B — SECURITY OPERATIONS (10.20.0.0/16)                       │
-│   ┌──────────────────────────────────┐                              │
-│   │  Private Subnet 10.20.1.0/24     │                              │
-│   │  SG: allow ingress 5044/443      │                              │
-│   │       from VPC A CIDR only       │                              │
-│   │                                  │                              │
-│   │  ┌───────────────────────────┐   │                              │
-│   │  │ S3 SecOps Log Bucket      │   │                              │
-│   │  │  - KMS SSE-KMS encrypted  │   │                              │
-│   │  │  - HTTPS-only policy      │   │                              │
-│   │  │  - Versioned              │   │                              │
-│   │  │  - 90-day flow log audit  │   │                              │
-│   │  └───────────────────────────┘   │                              │
-│   └──────────────────────────────────┘                              │
-│                                                                      │
-│   ┌──────────────────────────────────┐                              │
-│   │  KMS Key (alias/wbh-secure-comms)│                              │
-│   │  - AES-256, auto-rotation ON     │                              │
-│   │  - Encrypts: S3, CloudWatch Logs │                              │
-│   └──────────────────────────────────┘                              │
-└──────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    Zero-Trust Network Perimeter                             │
+│                                                                             │
+│  Production VPC        Dev VPC         Staging VPC                         │
+│  (10.20.0.0/16)       (10.30.0.0/16)  (10.40.0.0/16)                      │
+│       │                    │                │                               │
+│       └──────────┬─────────┘                │                               │
+│                  │              ┌──────────┘                               │
+│                  └──────────────┤                                            │
+│                           ┌────▼─────────────────────────┐                    │
+│                           │  Transit Gateway (Hub)     │                    │
+│                           │  - Spoke→Hub routing ONLY  │                    │
+│                           │  - No spoke-to-spoke       │                    │
+│                           └────┬──────────────────────┘                    │
+│                                │                                            │
+│                    ┌───────────▼────────────────────────────────┐    │
+│                    │  SecOps Hub VPC (10.10.0.0/16)                   │    │
+│                    │                                                   │    │
+│                    │  ┌─────────────┐  ┌──────────────────────────┐   │    │
+│                    │  │  OpenSearch  │  │  Kinesis Firehose         │   │    │
+│                    │  │  SIEM        │◄─│  Log Pipeline             │   │    │
+│                    │  │ (open-source)│  │  VPC Flow Logs + Trail    │   │    │
+│                    │  └─────────────┘  └──────────────────────────┘   │    │
+│                    │                                                   │    │
+│                    │  ┌─────────────────────────────────────────────┐ │    │
+│                    │  │  Security Services (account-wide)           │ │    │
+│                    │  │  GuardDuty │ Security Hub │ Config          │ │    │
+│                    │  │  CloudTrail (all regions, all events)       │ │    │
+│                    │  └─────────────────────────────────────────────┘ │    │
+│                    │                                                   │    │
+│                    │  ┌─────────────────────────────────────────────┐ │    │
+│                    │  │  Automated Incident Response                │ │    │
+│                    │  │  GuardDuty HIGH → EventBridge               │ │    │
+│                    │  │  → Lambda auto-quarantine → SNS alert       │ │    │
+│                    │  └─────────────────────────────────────────────┘ │    │
+│                    └───────────────────────────────────────────────────┘    │
+│                                                                             │
+│  KMS CMK ────────────────────────────────────────────────────────────────► │
+│  Encrypts: S3, CloudWatch Logs, OpenSearch, SNS, CloudTrail, Firehose      │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Security Controls — Defense in Depth
+## Enterprise Upgrades Over Project 3
 
-| Layer | Control | Implementation |
+| Capability | Project 3 (Baseline) | Enterprise Project 6 |
 |---|---|---|
-| **Network** | VPC Peering (no public internet) | `aws_vpc_peering_connection` |
-| **Network** | Zero Trust SGs (deny all by default) | Explicit ingress/egress CIDR rules only |
-| **Network** | VPC Flow Logs (ALL traffic) | CloudWatch Logs, 90-day KMS-encrypted retention |
-| **Identity** | STS AssumeRole with ExternalId | Prevents confused deputy attacks |
-| **Identity** | Least-privilege IAM policy | Only `s3:PutObject` to specific prefix |
-| **Data at Rest** | KMS SSE-KMS on S3 | AES-256, customer-managed, auto-rotate |
-| **Data in Transit** | S3 HTTPS-only bucket policy | `aws:SecureTransport: false → Deny` |
-| **Data in Transit** | VPC Peering (private AWS backbone) | Never traverses public internet |
-| **Integrity** | SHA-256 hash in S3 metadata | Verifies payload integrity post-upload |
-| **Monitoring** | CloudWatch alarm on rejected traffic | Detects lateral movement / misconfiguration |
-| **Audit** | S3 object versioning | Full log history, tamper evidence |
-
----
-
-## Components
-
-| Resource | Description |
-|---|---|
-| `aws_kms_key` | Customer-managed encryption key, auto-rotation enabled |
-| `aws_vpc` (x2) | Production and SecOps VPCs, fully isolated |
-| `aws_vpc_peering_connection` | Private encrypted channel between VPCs |
-| `aws_route` (x2) | Bidirectional routing through peering only |
-| `aws_security_group` (x2) | Zero Trust SGs — deny all, explicit CIDR allows |
-| `aws_flow_log` (x2) | ALL traffic captured to CloudWatch (KMS encrypted) |
-| `aws_iam_role` | Cross-VPC role with ExternalId + least-privilege policy |
-| `aws_s3_bucket` | SecOps log bucket: KMS, HTTPS-only, versioned, private |
-| `aws_cloudwatch_metric_alarm` | Alert on rejected traffic spikes |
+| **Network topology** | 2-VPC peering (peer-to-peer) | 4-VPC Transit Gateway hub-and-spoke |
+| **Traffic isolation** | SG rules (CIDR-based) | TGW route tables: spokes cannot reach each other |
+| **Log collection** | VPC Flow Logs → CloudWatch | All 4 VPCs + CloudTrail → Kinesis Firehose → OpenSearch |
+| **SIEM** | None | OpenSearch (open-source, 2-node HA cluster) |
+| **Compliance** | Manual review | AWS Config continuous recording + 6 managed rules |
+| **Threat detection** | CloudWatch alarm on rejections | GuardDuty (malware, S3, K8s audit) + Security Hub |
+| **Security standards** | Custom | CIS Benchmark 1.4, AWS FSBP, PCI-DSS 3.2.1 |
+| **Incident response** | Manual | EventBridge + Lambda auto-quarantine within 60s |
+| **Audit trail** | VPC Flow Logs (2 VPCs) | CloudTrail multi-region + data events + Insights |
+| **Log enrichment** | Raw logs | Lambda enrichment: account_id, region, timestamp |
+| **Encryption** | KMS SSE-KMS (S3 only) | KMS CMK + custom key policy for CW Logs + Firehose |
 
 ---
 
 ## Prerequisites
 
-| Tool | Source |
-|---|---|
-| Terraform >= 1.6 | https://developer.hashicorp.com/terraform/install |
-| AWS CLI >= 2.x | https://aws.amazon.com/cli/ |
-| Python >= 3.9 | https://python.org |
-| boto3, cryptography | `pip install boto3 cryptography` |
+| Tool | Version | Source |
+|---|---|---|
+| Terraform | >= 1.6 | https://developer.hashicorp.com/terraform/install |
+| AWS CLI | >= 2.x | https://aws.amazon.com/cli/ |
+| Python | >= 3.9 | https://python.org |
+| boto3 | latest | `pip install boto3` |
+| jq | any | `yum install jq` / `brew install jq` |
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Deploy infrastructure
-cd project3-secure-cloud-comms
+# 1. Navigate to project directory
+cd enterprise-project-6-zerotrust-secops
+
+# 2. Initialize Terraform
 terraform init
+
+# 3. Preview the security operations infrastructure
 terraform plan -out=tfplan
+
+# 4. Deploy (~10-15 min; OpenSearch takes longest)
 terraform apply tfplan
 
-# 2. Get outputs
-terraform output
+# 5. Run the incident response verification script
+chmod +x remediate.sh
+./remediate.sh --verify --region us-east-1
 
-# 3. Run the secure log forwarder (from a VPC A workload)
-python secure_log_forwarder.py \
-  --role-arn $(terraform output -raw cross_vpc_role_arn) \
-  --bucket   $(terraform output -raw secops_log_bucket) \
-  --kms-key-id $(terraform output -raw kms_key_id) \
-  --verify
+# 6. Verify OpenSearch SIEM is receiving logs
+terraform output opensearch_dashboard_url
 
-# 4. Verify logs arrived in SecOps bucket
-aws s3 ls s3://$(terraform output -raw secops_log_bucket)/prod-logs/ --recursive
+# 7. Check Security Hub compliance score
+aws securityhub get-findings \
+  --filters '{"RecordState":[{"Value":"ACTIVE","Comparison":"EQUALS"}],"SeverityLabel":[{"Value":"CRITICAL","Comparison":"EQUALS"}]}' \
+  --region us-east-1 | jq '.Findings | length'
 
-# 5. Check VPC Flow Logs for traffic evidence
-aws logs describe-log-streams \
-  --log-group-name /aws/vpc/wbh-secure-comms/vpc-a/flow-logs
+# 8. View GuardDuty findings
+aws guardduty list-findings \
+  --detector-id $(terraform output -raw guardduty_detector_id) \
+  --finding-criteria '{"Criterion":{"severity":{"Gte":7}}}' \
+  --region us-east-1
+
+# 9. Open CloudWatch SecOps dashboard
+terraform output cw_dashboard
 ```
 
 ---
 
 ## Key Learning Outcomes
 
-- VPC Peering: private cross-VPC routing without internet exposure
-- KMS customer-managed keys: creation, rotation, key policies
-- IAM STS AssumeRole with ExternalId (confused deputy prevention)
-- Least-privilege IAM policies scoped to S3 key prefixes
-- VPC Flow Logs for full traffic audit and threat detection
-- S3 bucket policies enforcing HTTPS-only access
-- SHA-256 integrity verification for data in transit
-- CloudWatch alarms for anomaly detection on network reject events
+- AWS Transit Gateway: hub-and-spoke topology replacing VPC peering mesh
+- Transit Gateway route tables: enforcing zero spoke-to-spoke traffic without individual rules
+- OpenSearch (open-source Elasticsearch): SIEM data ingestion, index management, dashboards
+- Kinesis Firehose log pipeline: VPC Flow Logs + CloudTrail → enrichment → OpenSearch
+- AWS Config continuous compliance: 6 managed rules with delivery channel
+- Security Hub aggregation: CIS Benchmark 1.4, AWS FSBP, PCI-DSS 3.2.1 simultaneously
+- GuardDuty advanced configuration: malware scanning, K8s audit, finding publication to S3
+- EventBridge + Lambda: automated incident response under 60 seconds
+- KMS CMK custom key policies: granting CloudWatch Logs and Firehose encryption access
+- CloudTrail Insights: API call rate anomaly detection
 
 ---
 
 ## Open-Source References
 
-- [AWS VPC Peering Guide](https://docs.aws.amazon.com/vpc/latest/peering/what-is-vpc-peering.html)
-- [AWS KMS Developer Guide](https://docs.aws.amazon.com/kms/latest/developerguide/)
-- [STS AssumeRole ExternalId Best Practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)
-- [VPC Flow Logs](https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.html)
-- [S3 Security Best Practices](https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html)
-- [NIST 800-53 SC Family (System & Comms Protection)](https://csrc.nist.gov/projects/cprt/catalog#/cprt/framework/version/SP_800_53_5_1_0/home)
+- [AWS Transit Gateway Documentation](https://docs.aws.amazon.com/vpc/latest/tgw/)
+- [OpenSearch Documentation](https://opensearch.org/docs/latest/)
+- [AWS Security Hub User Guide](https://docs.aws.amazon.com/securityhub/latest/userguide/)
+- [AWS Config Managed Rules](https://docs.aws.amazon.com/config/latest/developerguide/managed-rules-by-aws-config.html)
+- [GuardDuty User Guide](https://docs.aws.amazon.com/guardduty/latest/ug/)
+- [CIS AWS Foundations Benchmark v1.4](https://www.cisecurity.org/benchmark/amazon_web_services)

@@ -1,73 +1,50 @@
-# SUMMARY — Project 3: Secure Cloud-to-Cloud Communication
+# Enterprise Project 6 — Executive Summary
+## Zero-Trust Security Operations Platform
 
-**Author:** Wilton B. Harrison  
-**Date:** 2026  
-**Classification:** Portfolio / Professional Development
-
----
-
-## What This Project Does
-
-Project 3 builds a **zero-trust encrypted communication channel between two isolated AWS VPCs** — simulating the security architecture required when separate cloud environments need to share data without public internet exposure. A Production VPC (VPC A) securely forwards encrypted security event logs to a Security Operations VPC (VPC B) using VPC Peering, AWS KMS encryption, IAM role assumption via STS, and strict security group enforcement.
-
-Nothing is accessible from the public internet. Every byte is encrypted. Every access requires explicit IAM authorization. Every packet is logged.
+**Author:** Wilton B. Harrison | **Stack:** Terraform · AWS Security · OpenSearch · Python | **Based on:** Project 3
 
 ---
 
-## Why It Matters for Cloud Security Engineering Roles
+## What This Project Proves
 
-This project addresses the **hardest problem in enterprise cloud security**: how do you connect systems that need to communicate, without introducing attack surface? It demonstrates:
-
-- **Zero Trust network design** — deny all by default, explicit allow only at the CIDR and port level
-- **End-to-end encryption** — KMS customer-managed keys for at-rest, HTTPS enforcement for in-transit
-- **Identity-based access** — IAM roles and STS AssumeRole instead of network-based trust
-- **Full observability** — VPC Flow Logs capture every packet, CloudWatch alarms on anomalies
-- **Confusion-resistant IAM** — ExternalId condition prevents confused deputy attacks
-
-This is the pattern used in regulated industries (healthcare, defense, finance) where data must cross environment boundaries without violating compliance boundaries.
+This project demonstrates the ability to architect and deploy an **enterprise-grade Security Operations Center (SecOps)** using zero-trust principles, open-source SIEM, automated threat response, and multi-standard compliance.
 
 ---
 
-## NIST 800-53 Controls Addressed
+## Before vs. After
 
-| Control | Description | Implementation |
+| | Project 3 (Baseline) | Enterprise Project 6 |
 |---|---|---|
-| SC-8 | Transmission Confidentiality | VPC Peering + HTTPS-only S3 policy |
-| SC-28 | Protection of Information at Rest | KMS SSE-KMS on S3 + CloudWatch Logs |
-| SC-7 | Boundary Protection | Security Groups (deny-all + explicit allow) |
-| AU-9 | Protection of Audit Information | KMS-encrypted, versioned flow logs |
-| AC-6 | Least Privilege | IAM policy scoped to single S3 prefix |
-| SI-7 | Software & Information Integrity | SHA-256 hash verification post-upload |
-| CA-7 | Continuous Monitoring | CloudWatch alarm on rejected traffic |
+| **Network topology** | 2-VPC peering | 4-VPC Transit Gateway hub-and-spoke |
+| **Environments monitored** | 2 | 4 (production + dev + staging + hub) |
+| **Log destination** | CloudWatch | OpenSearch SIEM (full-text searchable) |
+| **Log pipeline** | Direct write | Kinesis Firehose with Lambda enrichment |
+| **Audit trail** | VPC Flow Logs only | CloudTrail (all events) + Flow Logs (all 4 VPCs) |
+| **Compliance checks** | None | AWS Config 6 managed rules (continuous) |
+| **Security standards** | Custom | CIS 1.4 + AWS FSBP + PCI-DSS 3.2.1 |
+| **Threat detection** | 1 CloudWatch alarm | GuardDuty (malware, K8s, S3) + Security Hub |
+| **Incident response** | Manual (email alert) | Automated Lambda quarantine in < 60 seconds |
+| **Monitoring type** | Passive only | Passive (SIEM/dashboards) + Active (auto-response) |
 
 ---
 
 ## Architecture Decision Highlights
 
-| Decision | Rationale |
-|---|---|
-| VPC Peering over VPN/internet | Lower latency, no encryption overhead, fully private AWS backbone |
-| STS AssumeRole with ExternalId | Prevents third-party confused deputy — required in multi-tenant environments |
-| KMS auto-rotation enabled | Limits key compromise blast radius — industry standard |
-| Flow logs on ALL traffic | ACCEPT-only logs miss rejected probes — critical for threat detection |
-| S3 DenyNonHTTPS policy | Blocks any misconfigured client using HTTP — data exposure prevention |
-| Versioned S3 bucket | Tamper detection + recovery — required for log integrity in compliance audits |
+1. **Transit Gateway over peering mesh** — 4 VPCs with peering requires 6 connections; TGW requires 4 and enforces hub-only routing
+2. **OpenSearch over CloudWatch Logs Insights** — open-source, richer query capabilities, Kibana-compatible dashboards, no per-query cost
+3. **Kinesis Firehose with Lambda enrichment** — enriches logs before storage; prevents retroactive enrichment issues during incidents
+4. **Security Hub 3 standards simultaneously** — CIS + FSBP + PCI-DSS gives comprehensive coverage across compliance frameworks
+5. **Auto-rotation KMS CMK** — meets NIST 800-57 recommendation for annual key rotation without manual scheduling
 
 ---
 
-## Tools & Open-Source Stack
+## Open-Source Tools Used
 
-| Tool | Role | License |
+| Tool | License | Purpose |
 |---|---|---|
-| Terraform | Infrastructure provisioning | MPL 2.0 |
-| AWS KMS | Envelope encryption | N/A (AWS managed) |
-| Python 3 | Log forwarder application | PSF |
-| Boto3 | AWS API (STS, S3, KMS) | Apache 2.0 |
-| AWS VPC | Network isolation layer | N/A (AWS managed) |
-| CloudWatch | Log storage + alerting | N/A (AWS managed) |
+| Terraform >= 1.6 | MPL-2.0 | Infrastructure as code |
+| OpenSearch 2.11 | Apache-2.0 | Open-source SIEM and log analytics |
+| Python 3.12 (Lambda) | PSF | Log enrichment + incident response |
+| AWS Provider >= 5.0 | MPL-2.0 | AWS resource management |
 
----
-
-## Skills Demonstrated
-
-`VPC Peering` · `Zero Trust Network Design` · `AWS KMS` · `Customer-Managed Keys` · `Key Rotation` · `IAM STS AssumeRole` · `ExternalId Condition` · `Least-Privilege IAM` · `VPC Flow Logs` · `CloudWatch Alarms` · `S3 Bucket Policies` · `SSE-KMS Encryption` · `HTTPS Enforcement` · `SHA-256 Integrity Verification` · `Python Boto3` · `NIST 800-53 Mapping` · `Cross-Environment Security Architecture`
+*Estimated cost: ~$100-200/month (OpenSearch t3.small × 2 nodes is largest cost driver).*
