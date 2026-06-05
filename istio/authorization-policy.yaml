@@ -1,0 +1,16 @@
+# Allowlist: only the Istio Ingress Gateway may call agw-app.
+# All other pod-to-pod traffic is denied by default (zero-trust).
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: agw-app-allow-ingress
+  namespace: artisan-gem-works
+spec:
+  selector:
+    matchLabels:
+      app: agw-app
+  rules:
+  - from:
+    - source:
+        principals:
+        - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account

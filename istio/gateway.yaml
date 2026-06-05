@@ -1,0 +1,28 @@
+apiVersion: networking.istio.io/v1beta1
+kind: Gateway
+metadata:
+  name: agw-gateway
+  namespace: artisan-gem-works
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+  - port:
+      number: 443
+      name: https
+      protocol: HTTPS
+    tls:
+      mode: SIMPLE
+      credentialName: agw-tls-cert
+    hosts:
+    - artisangemworks.com
+    - www.artisangemworks.com
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - artisangemworks.com
+    - www.artisangemworks.com
+    tls:
+      httpsRedirect: true

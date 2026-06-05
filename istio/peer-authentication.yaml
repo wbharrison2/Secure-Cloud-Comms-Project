@@ -1,0 +1,10 @@
+# Enforce STRICT mTLS for all pods in the artisan-gem-works namespace.
+# Any pod without a valid SPIFFE identity (i.e., not injected by Istio) is rejected.
+apiVersion: security.istio.io/v1beta1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: artisan-gem-works
+spec:
+  mtls:
+    mode: STRICT
