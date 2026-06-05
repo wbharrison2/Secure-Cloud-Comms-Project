@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: agw-app
+  namespace: artisan-gem-works
+  labels:
+    app: agw-app
+spec:
+  selector:
+    app: agw-app
+  ports:
+  - name: http
+    port: 80
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP

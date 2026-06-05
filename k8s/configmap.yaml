@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agw-config
+  namespace: artisan-gem-works
+data:
+  NODE_ENV: production
+  PORT: "3000"
+  PDX_STORE_ID: "1"
+  SEA_STORE_ID: "2"
+  REDIS_KEY_PREFIX: "agw:"
+  CACHE_TTL_SECONDS: "300"
+  LOG_LEVEL: info

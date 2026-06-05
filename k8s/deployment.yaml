@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agw-app
+  namespace: artisan-gem-works
+  labels:
+    app: agw-app
+    version: v1
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: agw-app
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: agw-app
+        version: v1
+      annotations:
+        sidecar.istio.io/inject: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "15090"
+        prometheus.io/path: "/stats/prometheus"
+    spec:
+      serviceAccountName: agw-app
+      terminationGracePeriodSeconds: 45
+      containers:
+      - name: agw-app
+        image: ${AWS_ACCOUNT_ID}.dkr.ecr.us-west-2.amazonaws.com/artisan-gem-works:latest
+        ports:
+        - containerPort: 3000
+          name: http
+        envFrom:
+        - configMapRef:
+            name: agw-config
+        - secretRef:
+            name: agw-secrets
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 20
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /api/ready
+            port: 3000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          failureThreshold: 3
+        resources:
+          requests:
+            cpu: 250m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        lifecycle:
+          preStop:
+            exec:
+              # Give the Istio Envoy sidecar 5s to drain in-flight requests
+              # before this container stops accepting connections
+              command: ["/bin/sh", "-c", "sleep 5"]
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1001
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: tmp
+        emptyDir: {}
