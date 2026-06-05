@@ -1,0 +1,59 @@
+# Helm values for the falcosecurity/falco chart
+falco:
+  grpc:
+    enabled: true
+    bind_address: "unix:///var/run/falco/falco.sock"
+  grpc_output:
+    enabled: true
+  json_output: true
+  log_stderr: true
+  log_syslog: false
+  log_level: info
+  priority: WARNING
+  rules_file:
+  - /etc/falco/falco_rules.yaml
+  - /etc/falco/falco_rules.local.yaml
+  - /etc/falco/agw_rules.yaml
+
+customRules:
+  agw_rules.yaml: |-
+    # Loaded from falco/custom-rules.yaml
+
+falcoctl:
+  artifact:
+    follow:
+      enabled: true
+    install:
+      enabled: true
+      refs:
+      - falco-rules:latest
+
+# Use eBPF driver — does not require kernel module installation
+driver:
+  kind: ebpf
+
+# Allow Falco to run on system nodes
+tolerations:
+- effect: NoSchedule
+  key: node-role.kubernetes.io/system
+  operator: Exists
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Falcosidekick forwards alerts to AWS SNS and can be wired to PagerDuty
+falcosidekick:
+  enabled: true
+  config:
+    aws_sns:
+      topicarn: "arn:aws:sns:us-west-2:${AWS_ACCOUNT_ID}:agw-security-alerts"
+      region: us-west-2
+      minimumpriority: warning
+    slack:
+      webhookurl: ""
+      minimumpriority: critical

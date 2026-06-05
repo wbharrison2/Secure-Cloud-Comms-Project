@@ -1,0 +1,67 @@
+# Custom Falco rules for Artisan Gem Works
+# Deploy via Helm values (falco.customRules) or copy to /etc/falco/agw_rules.yaml
+
+- rule: AGW Shell Spawned in Container
+  desc: Detect shell execution inside the artisan-gem-works application container
+  condition: >
+    spawned_process and container and
+    container.image.repository contains "artisan-gem-works" and
+    proc.name in (shell_binaries)
+  output: >
+    Shell spawned in AGW container (user=%user.name container=%container.id
+    image=%container.image.repository cmd=%proc.cmdline parent=%proc.pname)
+  priority: CRITICAL
+  tags: [agw, shell, container_escape]
+
+- rule: AGW Unexpected Outbound Connection
+  desc: Detect outbound connections from AGW containers to non-approved destinations
+  condition: >
+    outbound and container and
+    container.image.repository contains "artisan-gem-works" and
+    not (fd.sport in (443, 5432, 6379, 53)) and
+    not fd.sip.name in (rfc_1918_addresses)
+  output: >
+    Unexpected outbound connection from AGW container (user=%user.name
+    container=%container.id image=%container.image.repository
+    connection=%fd.name cmd=%proc.cmdline)
+  priority: CRITICAL
+  tags: [agw, network, exfiltration]
+
+- rule: AGW Write to /etc
+  desc: Detect writes to /etc inside the AGW container (possible persistence attempt)
+  condition: >
+    open_write and container and
+    container.image.repository contains "artisan-gem-works" and
+    fd.name startswith /etc
+  output: >
+    Write to /etc detected in AGW container (user=%user.name container=%container.id
+    image=%container.image.repository file=%fd.name cmd=%proc.cmdline)
+  priority: CRITICAL
+  tags: [agw, filesystem, persistence]
+
+- rule: AGW Read Sensitive Secrets
+  desc: Detect reads of mounted Kubernetes secret files by unexpected processes
+  condition: >
+    open_read and container and
+    container.image.repository contains "artisan-gem-works" and
+    fd.name startswith /var/run/secrets and
+    not proc.name in (node)
+  output: >
+    Sensitive secret file read by unexpected process (user=%user.name
+    container=%container.id image=%container.image.repository
+    file=%fd.name proc=%proc.name cmd=%proc.cmdline)
+  priority: HIGH
+  tags: [agw, secrets, exfiltration]
+
+- rule: AGW Crypto Mining Process
+  desc: Detect known crypto mining process names in AGW containers
+  condition: >
+    spawned_process and container and
+    container.image.repository contains "artisan-gem-works" and
+    proc.name in (xmrig, minerd, cpuminer, cryptonight, ethminer, nheqminer)
+  output: >
+    Crypto mining process detected in AGW container (user=%user.name
+    container=%container.id image=%container.image.repository
+    proc=%proc.name cmd=%proc.cmdline)
+  priority: CRITICAL
+  tags: [agw, cryptomining, malware]
