@@ -1,73 +1,75 @@
-# SUMMARY — Project 3: Secure Cloud-to-Cloud Communication
+# Project 6 Summary
 
-**Author:** Wilton B. Harrison  
-**Date:** 2026  
-**Classification:** Portfolio / Professional Development
+## Problem
 
----
+Following acquisition by Meridian Jewelry Group in January 2026, a third-party
+security audit found 7 critical vulnerabilities in the EKS platform (Project 5):
+plaintext pod-to-pod traffic, never-rotated secrets, no runtime threat detection,
+no centralized security monitoring, no audit trail, no vulnerability scanning,
+and SSRF-exploitable instance metadata access.
 
-## What This Project Does
+## Solution
 
-Project 3 builds a **zero-trust encrypted communication channel between two isolated AWS VPCs** — simulating the security architecture required when separate cloud environments need to share data without public internet exposure. A Production VPC (VPC A) securely forwards encrypted security event logs to a Security Operations VPC (VPC B) using VPC Peering, AWS KMS encryption, IAM role assumption via STS, and strict security group enforcement.
+Implemented a zero-trust security platform: Istio mTLS STRICT (encrypted pod
+communication), External Secrets with automatic rotation (no long-lived credentials),
+Falco DaemonSet (runtime threat detection), Security Hub + GuardDuty (centralized
+monitoring), CloudTrail EKS audit logging, Trivy in CI/CD (blocks on CRITICAL CVEs),
+and IMDSv2 enforcement with IRSA.
 
-Nothing is accessible from the public internet. Every byte is encrypted. Every access requires explicit IAM authorization. Every packet is logged.
+## Before vs. After
 
----
+| Dimension | Project 5 (EKS+ArgoCD) | Project 6 (Zero-Trust) |
+|-----------|------------------------|------------------------|
+| **Pod-to-pod traffic** | Plaintext | mTLS STRICT (Istio) |
+| **Secret rotation** | Never | 30–90 days (AWS Secrets Manager) |
+| **Runtime detection** | None | Falco (syscall-level) |
+| **Threat intelligence** | None | GuardDuty (DNS, VPC, CloudTrail) |
+| **Security findings** | Siloed | Security Hub (aggregated) |
+| **K8s audit trail** | None | CloudTrail + control plane logs |
+| **CVE scanning** | None | Trivy (blocks CRITICAL) |
+| **Instance metadata** | IMDSv1 (SSRF risk) | IMDSv2 + IRSA |
+| **Pod network auth** | NetworkPolicy only | + AuthorizationPolicy (Istio) |
+| **Ingress** | NGINX Ingress | Istio Gateway + VirtualService |
+| **Compliance** | None | CIS + PCI DSS (Security Hub) |
+| **Incident response** | Manual, ad-hoc | SNS → PagerDuty (CRITICAL auto-alert) |
 
-## Why It Matters for Cloud Security Engineering Roles
+## Security Findings Resolution
 
-This project addresses the **hardest problem in enterprise cloud security**: how do you connect systems that need to communicate, without introducing attack surface? It demonstrates:
+| Finding | Status | Implementation |
+|---------|--------|----------------|
+| CRITICAL-001: No mTLS | ✓ Closed | Istio STRICT mode |
+| CRITICAL-002: Never-rotated secrets | ✓ Closed | External Secrets + Secrets Manager |
+| CRITICAL-003: No runtime detection | ✓ Closed | Falco DaemonSet |
+| CRITICAL-004: No security monitoring | ✓ Closed | Security Hub + GuardDuty |
+| CRITICAL-005: No audit trail | ✓ Closed | CloudTrail + EKS control plane logs |
+| CRITICAL-006: No CVE scanning | ✓ Closed | Trivy in CI/CD |
+| CRITICAL-007: IMDSv1 SSRF | ✓ Closed | IMDSv2 + IRSA |
 
-- **Zero Trust network design** — deny all by default, explicit allow only at the CIDR and port level
-- **End-to-end encryption** — KMS customer-managed keys for at-rest, HTTPS enforcement for in-transit
-- **Identity-based access** — IAM roles and STS AssumeRole instead of network-based trust
-- **Full observability** — VPC Flow Logs capture every packet, CloudWatch alarms on anomalies
-- **Confusion-resistant IAM** — ExternalId condition prevents confused deputy attacks
+## Additional Finding (Discovered During Remediation)
 
-This is the pattern used in regulated industries (healthcare, defense, finance) where data must cross environment boundaries without violating compliance boundaries.
+Falco detected a rogue process on Day 1 of deployment: a transitive npm
+dependency (`agw-analytics-helper`) phoning home to an external IP. This
+would have been undetectable without runtime monitoring. Removed, CVE filed.
 
----
+## Architecture Diagram
 
-## NIST 800-53 Controls Addressed
+```
+[Customers]
+    │ HTTPS
+[CloudFront + WAF]
+    │ HTTPS
+[Istio Ingress Gateway]
+    │ mTLS
+[agw-production] PeerAuthentication: STRICT
+    ├── agw-app Pod (Envoy sidecar)
+    └── Falco (DaemonSet, syscall monitor)
 
-| Control | Description | Implementation |
-|---|---|---|
-| SC-8 | Transmission Confidentiality | VPC Peering + HTTPS-only S3 policy |
-| SC-28 | Protection of Information at Rest | KMS SSE-KMS on S3 + CloudWatch Logs |
-| SC-7 | Boundary Protection | Security Groups (deny-all + explicit allow) |
-| AU-9 | Protection of Audit Information | KMS-encrypted, versioned flow logs |
-| AC-6 | Least Privilege | IAM policy scoped to single S3 prefix |
-| SI-7 | Software & Information Integrity | SHA-256 hash verification post-upload |
-| CA-7 | Continuous Monitoring | CloudWatch alarm on rejected traffic |
+[Secrets] AWS Secrets Manager → External Secrets → K8s Secret
+[Security] GuardDuty + Security Hub + CloudTrail → SNS → PagerDuty
+[CI/CD] GitHub Actions + Trivy scan + ArgoCD
+```
 
----
+## Audit Outcome
 
-## Architecture Decision Highlights
-
-| Decision | Rationale |
-|---|---|
-| VPC Peering over VPN/internet | Lower latency, no encryption overhead, fully private AWS backbone |
-| STS AssumeRole with ExternalId | Prevents third-party confused deputy — required in multi-tenant environments |
-| KMS auto-rotation enabled | Limits key compromise blast radius — industry standard |
-| Flow logs on ALL traffic | ACCEPT-only logs miss rejected probes — critical for threat detection |
-| S3 DenyNonHTTPS policy | Blocks any misconfigured client using HTTP — data exposure prevention |
-| Versioned S3 bucket | Tamper detection + recovery — required for log integrity in compliance audits |
-
----
-
-## Tools & Open-Source Stack
-
-| Tool | Role | License |
-|---|---|---|
-| Terraform | Infrastructure provisioning | MPL 2.0 |
-| AWS KMS | Envelope encryption | N/A (AWS managed) |
-| Python 3 | Log forwarder application | PSF |
-| Boto3 | AWS API (STS, S3, KMS) | Apache 2.0 |
-| AWS VPC | Network isolation layer | N/A (AWS managed) |
-| CloudWatch | Log storage + alerting | N/A (AWS managed) |
-
----
-
-## Skills Demonstrated
-
-`VPC Peering` · `Zero Trust Network Design` · `AWS KMS` · `Customer-Managed Keys` · `Key Rotation` · `IAM STS AssumeRole` · `ExternalId Condition` · `Least-Privilege IAM` · `VPC Flow Logs` · `CloudWatch Alarms` · `S3 Bucket Policies` · `SSE-KMS Encryption` · `HTTPS Enforcement` · `SHA-256 Integrity Verification` · `Python Boto3` · `NIST 800-53 Mapping` · `Cross-Environment Security Architecture`
+Meridian re-assessment on March 14, 2026: **All 7 findings closed**.
+Security posture: **Satisfactory**. Acquisition integration proceeded.

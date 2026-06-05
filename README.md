@@ -1,160 +1,189 @@
-# Project 3 — Secure Cloud-to-Cloud Communication
-**Author:** Wilton B. Harrison  
-**Stack:** Terraform · AWS VPC Peering · KMS · IAM STS · Python · Boto3  
-**Tier:** Cloud Security Engineer Portfolio Project
+# Project 6: Artisan Gem Works Franchise — Zero-Trust Security Platform
 
----
+**Artisan Gem Works** — Fine handcrafted jewelry, Portland and Seattle.
 
-## Overview
+| | |
+|---|---|
+| **Portland Flagship** | 2847 NW Thurman St, Portland, OR 97210 |
+| **Seattle Location** | 412 Pine St, Seattle, WA 98101 |
+| **Owner** | Mira Chen |
+| **Acquired by** | Meridian Jewelry Group (January 2026) |
+| **Website** | https://artisangemworks.com |
 
-This project establishes **encrypted, authenticated, zero-trust communication between two isolated AWS VPCs** — simulating secure connectivity between a production environment (VPC A) and a security operations center (VPC B). No traffic traverses the public internet. All data is encrypted at rest and in transit using AWS KMS. All cross-VPC access is controlled via IAM role assumption with ExternalId conditions.
+## What Changed from Project 5
 
-This pattern is used in real enterprises to connect separate cloud environments, business units, accounts, or compliance zones without exposing sensitive data to public routing.
+Project 5 ran on EKS with GitHub Actions + ArgoCD. In January 2026, Artisan Gem Works
+was acquired by Meridian Jewelry Group. Meridian’s security team ran a 3-week audit
+and found 7 critical security findings. This project implements the required remediations:
 
----
+| Finding | Severity | Remediation |
+|---------|----------|-------------|
+| No mTLS between pods | CRITICAL | Istio service mesh, STRICT mode |
+| Secrets never rotated | CRITICAL | External Secrets + AWS Secrets Manager |
+| No runtime threat detection | CRITICAL | Falco with custom rules |
+| No centralized security monitoring | CRITICAL | Security Hub + GuardDuty |
+| No EKS audit trail | CRITICAL | CloudTrail + control plane logs |
+| No container vulnerability scanning | CRITICAL | Trivy in CI/CD pipeline |
+| IMDSv2 not enforced (SSRF risk) | CRITICAL | IMDSv2 + IRSA for pod IAM |
 
-## Architecture
+## Security Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    AWS Account (Single Region)                        │
-│                                                                      │
-│   VPC A — PRODUCTION (10.10.0.0/16)                                 │
-│   ┌──────────────────────────────────┐                              │
-│   │  Private Subnet 10.10.1.0/24     │                              │
-│   │  ┌───────────────────────────┐   │                              │
-│   │  │ EC2 / ECS Production App  │   │                              │
-│   │  │  - Runs secure_log_       │   │                              │
-│   │  │    forwarder.py           │   │                              │
-│   │  │  - Assumes cross-VPC role │   │                              │
-│   │  │  - Sends KMS-encrypted    │   │                              │
-│   │  │    logs via VPC Peering   │   │                              │
-│   │  └───────────────────────────┘   │                              │
-│   │  SG: allow egress 5044/443       │                              │
-│   │       to VPC B CIDR only         │                              │
-│   └────────────┬─────────────────────┘                              │
-│                │                                                     │
-│         VPC Peering Connection                                       │
-│         (private, no internet)                                       │
-│         VPC Flow Logs → CloudWatch                                   │
-│                │                                                     │
-│   VPC B — SECURITY OPERATIONS (10.20.0.0/16)                       │
-│   ┌──────────────────────────────────┐                              │
-│   │  Private Subnet 10.20.1.0/24     │                              │
-│   │  SG: allow ingress 5044/443      │                              │
-│   │       from VPC A CIDR only       │                              │
-│   │                                  │                              │
-│   │  ┌───────────────────────────┐   │                              │
-│   │  │ S3 SecOps Log Bucket      │   │                              │
-│   │  │  - KMS SSE-KMS encrypted  │   │                              │
-│   │  │  - HTTPS-only policy      │   │                              │
-│   │  │  - Versioned              │   │                              │
-│   │  │  - 90-day flow log audit  │   │                              │
-│   │  └───────────────────────────┘   │                              │
-│   └──────────────────────────────────┘                              │
-│                                                                      │
-│   ┌──────────────────────────────────┐                              │
-│   │  KMS Key (alias/wbh-secure-comms)│                              │
-│   │  - AES-256, auto-rotation ON     │                              │
-│   │  - Encrypts: S3, CloudWatch Logs │                              │
-│   └──────────────────────────────────┘                              │
-└──────────────────────────────────────────────────────────────────────┘
+[Customers]
+    │ HTTPS (TLS 1.2+)
+    ▼
+[CloudFront + WAF]
+    │ HTTPS → origin-only
+    ▼
+[Istio Ingress Gateway]
+    │ mTLS (Envoy proxy)
+    ▼
+[agw-production namespace] ← PeerAuthentication: STRICT mTLS
+    │                       ← AuthorizationPolicy: allowlisted sources only
+    ├── Pod: agw-app (Envoy sidecar, mTLS on all traffic)
+    │   ├── livenessProbe:  GET /api/health
+    │   ├── readinessProbe: GET /api/ready (DB + Redis check)
+    │   └── Credentials: from External Secrets (AWS Secrets Manager)
+    │
+    └── Falco DaemonSet (syscall-level runtime monitoring)
+
+[Security & Compliance]
+├── AWS Security Hub (findings aggregation: CRITICAL/HIGH auto-alert)
+├── AWS GuardDuty (threat intelligence: DNS exfil, unusual API calls)
+├── AWS CloudTrail (EKS audit: every kubectl command logged to S3)
+├── AWS Config (compliance rules: encryption, logging enabled)
+└── Trivy (CI: blocks deploy if CRITICAL CVE found in image)
+
+[Secrets Lifecycle]
+AWS Secrets Manager → External Secrets Operator → Kubernetes Secret
+    └── JWT_SECRET: rotated every 30 days (auto)
+    └── DATABASE_URL: rotated every 90 days (Lambda rotation function)
+    └── REDIS_URL: rotated every 90 days
 ```
 
----
+## Istio mTLS
 
-## Security Controls — Defense in Depth
+All traffic between pods in the `agw-production` namespace is encrypted with mutual TLS.
+Pods without a valid Istio certificate cannot communicate with `agw-app`.
 
-| Layer | Control | Implementation |
-|---|---|---|
-| **Network** | VPC Peering (no public internet) | `aws_vpc_peering_connection` |
-| **Network** | Zero Trust SGs (deny all by default) | Explicit ingress/egress CIDR rules only |
-| **Network** | VPC Flow Logs (ALL traffic) | CloudWatch Logs, 90-day KMS-encrypted retention |
-| **Identity** | STS AssumeRole with ExternalId | Prevents confused deputy attacks |
-| **Identity** | Least-privilege IAM policy | Only `s3:PutObject` to specific prefix |
-| **Data at Rest** | KMS SSE-KMS on S3 | AES-256, customer-managed, auto-rotate |
-| **Data in Transit** | S3 HTTPS-only bucket policy | `aws:SecureTransport: false → Deny` |
-| **Data in Transit** | VPC Peering (private AWS backbone) | Never traverses public internet |
-| **Integrity** | SHA-256 hash in S3 metadata | Verifies payload integrity post-upload |
-| **Monitoring** | CloudWatch alarm on rejected traffic | Detects lateral movement / misconfiguration |
-| **Audit** | S3 object versioning | Full log history, tamper evidence |
+```yaml
+# PeerAuthentication: enforce mTLS
+kind: PeerAuthentication
+spec:
+  mtls:
+    mode: STRICT  # No plaintext allowed
 
----
+# AuthorizationPolicy: allow only Istio Ingress Gateway
+kind: AuthorizationPolicy
+spec:
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals: ["cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account"]
+```
 
-## Components
+## Falco Runtime Security
 
-| Resource | Description |
-|---|---|
-| `aws_kms_key` | Customer-managed encryption key, auto-rotation enabled |
-| `aws_vpc` (x2) | Production and SecOps VPCs, fully isolated |
-| `aws_vpc_peering_connection` | Private encrypted channel between VPCs |
-| `aws_route` (x2) | Bidirectional routing through peering only |
-| `aws_security_group` (x2) | Zero Trust SGs — deny all, explicit CIDR allows |
-| `aws_flow_log` (x2) | ALL traffic captured to CloudWatch (KMS encrypted) |
-| `aws_iam_role` | Cross-VPC role with ExternalId + least-privilege policy |
-| `aws_s3_bucket` | SecOps log bucket: KMS, HTTPS-only, versioned, private |
-| `aws_cloudwatch_metric_alarm` | Alert on rejected traffic spikes |
+Falco runs as a DaemonSet on every EKS node, monitoring system calls in real time.
+Custom rules detect AGW-specific threats:
 
----
+| Rule | Trigger | Alert |
+|------|---------|-------|
+| `agw_shell_in_container` | `bash` or `sh` exec in agw-app pod | CRITICAL |
+| `agw_unexpected_outbound` | TCP connection to non-RDS/Redis port | WARNING |
+| `agw_write_to_etc` | Write to `/etc` directory | ERROR |
+| `agw_read_secrets` | Access to `/proc` filesystem | WARNING |
+| `agw_crypto_mining` | CPU > 95% + external network | WARNING |
 
-## Prerequisites
+## External Secrets (Rotation Schedule)
 
-| Tool | Source |
-|---|---|
-| Terraform >= 1.6 | https://developer.hashicorp.com/terraform/install |
-| AWS CLI >= 2.x | https://aws.amazon.com/cli/ |
-| Python >= 3.9 | https://python.org |
-| boto3, cryptography | `pip install boto3 cryptography` |
+| Secret | AWS Secrets Manager Name | Rotation |
+|--------|--------------------------|----------|
+| JWT_SECRET | `agw/production/jwt-secret` | 30 days (Lambda) |
+| DATABASE_URL | `agw/production/database-url` | 90 days (RDS managed) |
+| REDIS_URL | `agw/production/redis-url` | 90 days (Lambda) |
+| STRIPE_SECRET_KEY | `agw/production/stripe-key` | Manual |
+| CLOUDFRONT_DISTRIBUTION_ID | `agw/production/cloudfront-id` | Static |
 
----
+External Secrets Operator polls AWS Secrets Manager every 1 hour and automatically
+rotates the Kubernetes Secret when the AWS secret version changes.
 
-## Quick Start
+## API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| GET | /api/health | None | Liveness probe |
+| GET | /api/ready | None | Readiness probe (DB + Redis) |
+| GET | /api/locations | None | Store locations |
+| GET | /api/products | None | Products (location filter) |
+| GET | /api/products/:slug | None | Product detail |
+| POST | /api/auth/login | None | Login |
+| POST | /api/auth/logout | Cookie | Logout |
+| GET | /api/auth/me | Cookie | Current user |
+| POST | /api/auth/2fa/setup | Cookie+Admin | Setup TOTP |
+| POST | /api/auth/2fa/enable | Cookie+Admin | Enable TOTP |
+| POST | /api/auth/2fa/disable | Cookie+Admin | Disable TOTP |
+| GET | /api/orders | Cookie | User orders |
+| POST | /api/orders | Cookie | Place order |
+| GET | /api/admin/products | Cookie+Admin | All products |
+| POST | /api/admin/products | Cookie+Admin | Create product |
+| PUT | /api/admin/products/:id | Cookie+Admin | Update product |
+| DELETE | /api/admin/products/:id | Cookie+Admin | Delete product |
+| GET | /api/admin/orders | Cookie+Admin | All orders |
+| PUT | /api/admin/orders/:id/status | Cookie+Admin | Update order status |
+| POST | /api/admin/cache/clear | Cookie+Admin | Clear Redis + CloudFront |
+| GET | /api/admin/audit-log | Cookie+Admin | Audit log (paginated) |
+
+## Security Controls (Full Stack)
+
+### Application Layer
+- **httpOnly cookies** — JWT never accessible to JavaScript (`__Host-agw_token`)
+- **Helmet.js** — X-Frame-Options, HSTS (63072000s), strict CSP
+- **Rate limiting** — 200 req/15min API, 5 req/15min auth/admin
+- **TOTP 2FA** — RFC 6238 admin authentication
+- **Redis JWT blocklist** — session revocation on logout
+- **bcryptjs rounds=12** — password hashing
+
+### Network Layer
+- **Istio mTLS STRICT** — all pod-to-pod traffic encrypted
+- **Istio AuthorizationPolicy** — allowlist-only ingress to agw-app
+- **Kubernetes NetworkPolicy** — pod-level egress restrictions
+- **WAF** — OWASP CRS + IP rate limit 2000/IP (CloudFront scope)
+
+### Infrastructure Layer
+- **External Secrets + AWS Secrets Manager** — automatic rotation
+- **IMDSv2** — enforced on all EKS nodes (no SSRF credential theft)
+- **IRSA** — pod-level IAM (no node-level credential access)
+- **Trivy CI scan** — blocks deploy on CRITICAL CVEs
+
+### Monitoring & Response
+- **Falco** — runtime syscall threat detection
+- **AWS GuardDuty** — DNS exfiltration, unusual API calls, port scanning
+- **AWS Security Hub** — CRITICAL/HIGH findings → SNS → PagerDuty
+- **AWS CloudTrail** — every Kubernetes API call logged (90-day retention, S3)
+- **AWS Config** — compliance rules, drift detection
+
+## Local Development
 
 ```bash
-# 1. Deploy infrastructure
-cd project3-secure-cloud-comms
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
-
-# 2. Get outputs
-terraform output
-
-# 3. Run the secure log forwarder (from a VPC A workload)
-python secure_log_forwarder.py \
-  --role-arn $(terraform output -raw cross_vpc_role_arn) \
-  --bucket   $(terraform output -raw secops_log_bucket) \
-  --kms-key-id $(terraform output -raw kms_key_id) \
-  --verify
-
-# 4. Verify logs arrived in SecOps bucket
-aws s3 ls s3://$(terraform output -raw secops_log_bucket)/prod-logs/ --recursive
-
-# 5. Check VPC Flow Logs for traffic evidence
-aws logs describe-log-streams \
-  --log-group-name /aws/vpc/wbh-secure-comms/vpc-a/flow-logs
+cp .env.example .env
+# Edit .env with your values
+docker-compose up -d
+# App:   http://localhost:3000
+# Admin: http://localhost:3000/admin.html
 ```
 
----
+## Demo Credentials
 
-## Key Learning Outcomes
+See `PRIVATE-ADMIN-GUIDE.md` for all credentials.
 
-- VPC Peering: private cross-VPC routing without internet exposure
-- KMS customer-managed keys: creation, rotation, key policies
-- IAM STS AssumeRole with ExternalId (confused deputy prevention)
-- Least-privilege IAM policies scoped to S3 key prefixes
-- VPC Flow Logs for full traffic audit and threat detection
-- S3 bucket policies enforcing HTTPS-only access
-- SHA-256 integrity verification for data in transit
-- CloudWatch alarms for anomaly detection on network reject events
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | admin@artisangemworks.com | Admin!2024Secure |
+| Customer | customer@demo.com | Customer!2024Demo |
 
----
+**Note**: In production, credentials are managed by AWS Secrets Manager and rotated
+automatically. The credentials above are for local development and demo only.
 
-## Open-Source References
-
-- [AWS VPC Peering Guide](https://docs.aws.amazon.com/vpc/latest/peering/what-is-vpc-peering.html)
-- [AWS KMS Developer Guide](https://docs.aws.amazon.com/kms/latest/developerguide/)
-- [STS AssumeRole ExternalId Best Practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)
-- [VPC Flow Logs](https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.html)
-- [S3 Security Best Practices](https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html)
-- [NIST 800-53 SC Family (System & Comms Protection)](https://csrc.nist.gov/projects/cprt/catalog#/cprt/framework/version/SP_800_53_5_1_0/home)
+**Stripe Test Cards**: `4242 4242 4242 4242` (success), `4000 0000 0000 9995` (decline)
