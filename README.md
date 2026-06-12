@@ -2,6 +2,16 @@
 
 > **A hands-on demo of the full Artisan Gem Works e-commerce platform, built from the infrastructure and business logic established across Projects 1–6.**
 
+## 🌐 Live Website
+
+| | Link |
+|---|---|
+| **Storefront** | [https://wbharrison2.github.io/artisan-gem-works/](https://wbharrison2.github.io/artisan-gem-works/) |
+| **Admin Portal** | [https://wbharrison2.github.io/artisan-gem-works/admin.html](https://wbharrison2.github.io/artisan-gem-works/admin.html) |
+| **GitHub Repo** | [https://github.com/wbharrison2/artisan-gem-works](https://github.com/wbharrison2/artisan-gem-works) |
+
+> No installation needed — click the Storefront link and start shopping.
+
 ---
 
 ## Projects 1–6 Summary
@@ -58,18 +68,14 @@ artisan-gem-works/
 
 ## Access the Demo
 
-The website runs entirely in your browser — no server required.
+**The site is live online — no download or installation required.**
 
-**Open the storefront:**
-```
-artisan-gem-works/index.html
-```
-Double-click `index.html` in File Explorer, or drag it into any web browser.
+| | |
+|---|---|
+| **Storefront** | https://wbharrison2.github.io/artisan-gem-works/ |
+| **Admin Portal** | https://wbharrison2.github.io/artisan-gem-works/admin.html |
 
-**Open the admin portal:**
-```
-artisan-gem-works/admin.html
-```
+Just click either link in any browser to get started.
 
 ---
 
