@@ -1,160 +1,135 @@
-# Project 3 — Secure Cloud-to-Cloud Communication
-**Author:** Wilton B. Harrison  
-**Stack:** Terraform · AWS VPC Peering · KMS · IAM STS · Python · Boto3  
-**Tier:** Cloud Security Engineer Portfolio Project
+# Project 7 — Interact: Artisan Gem Works Demo Website
+
+> **A hands-on demo of the full Artisan Gem Works e-commerce platform, built from the infrastructure and business logic established across Projects 1–6.**
 
 ---
 
-## Overview
+## Projects 1–6 Summary
 
-This project establishes **encrypted, authenticated, zero-trust communication between two isolated AWS VPCs** — simulating secure connectivity between a production environment (VPC A) and a security operations center (VPC B). No traffic traverses the public internet. All data is encrypted at rest and in transit using AWS KMS. All cross-VPC access is controlled via IAM role assumption with ExternalId conditions.
-
-This pattern is used in real enterprises to connect separate cloud environments, business units, accounts, or compliance zones without exposing sensitive data to public routing.
+| # | Repo | Branch | What It Does |
+|---|------|--------|-------------|
+| **1** | Cloud-Deployment-Project | `demo/project-4-franchise-ha` | Multi-location AWS infrastructure for Artisan Gem Works — 3-tier VPC, EC2 via SSM, S3 artifact storage, IAM least-privilege, and a high-availability architecture for the Portland flagship and Seattle expansion. |
+| **2** | Cloud-Deployment-Project | `demo/project-5-franchise-k8s` | Kubernetes upgrade path for the franchise platform — EKS cluster with Helm charts, horizontal pod autoscaling, and a shared product catalog service across both store locations. |
+| **3** | Cloud-Migration-Project | `demo/project-1-local-store` | On-premises to AWS migration baseline — Dockerized app stack, Terraform provisioning, initial product database with the Portland store's 20 shared SKUs. |
+| **4** | Cloud-Migration-Project | `demo/project-2-cdn-enhanced` | CDN-accelerated storefront — CloudFront distribution, S3 static hosting, and the full 32-product catalog across Portland and Seattle locations with origin failover. |
+| **5** | Cloud-Migration-Project | `demo/project-3-secure-local` | Secure local-to-cloud bridge — VPN tunnel, encrypted S3 transfers, and the customer JWT authentication system with TOTP 2FA for admin access. |
+| **6** | Secure-Cloud-Comms-Project | `demo/project-6-franchise-zerotrust` | Zero-trust security layer — AWS VPC Peering between Portland and Seattle environments, KMS encryption for all customer data, Secrets Manager credential rotation, and audit logging for compliance. |
 
 ---
 
-## Architecture
+## Website Summary — Artisan Gem Works
+
+A fully functional e-commerce demo website for **Artisan Gem Works**, a fine handcrafted jewelry company owned by Mira Chen (a Meridian Jewelry Group brand). The site is themed in **Southern Charm** with a **Temu/Shopify-style** shopping interface.
+
+### Business Details
+
+| Field | Value |
+|-------|-------|
+| **Company** | Artisan Gem Works |
+| **Owner** | Mira Chen |
+| **Parent** | Meridian Jewelry Group |
+| **Email** | shop@artisangemworks.com |
+| **Portland Store** | 2847 NW Thurman St, Portland, OR 97210 · (503) 555-0142 |
+| **Seattle Store** | 412 Pine St, Seattle, WA 98101 · (206) 555-0178 |
+
+### What's on the Site
+
+- **32 handcrafted jewelry products** ($65–$287) across rings, pendants, earrings, cuffs, bracelets, necklaces, and gift sets
+- **Location-exclusive items** — Portland-only and Seattle-only pieces alongside the shared catalog
+- **Flash deals** with live countdown timer
+- **Full shopping cart** with quantity management
+- **Secure checkout** with simulated Stripe payment processing
+- **Order tracking** — auto-generated FedEx tracking number with a 7-step delivery timeline
+- **Email confirmation** — rendered preview of the order email sent from `shop@artisangemworks.com`
+- **Admin dashboard** — full order management, product catalog, customer list, and sales analytics
+
+### Site Files
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                    AWS Account (Single Region)                        │
-│                                                                      │
-│   VPC A — PRODUCTION (10.10.0.0/16)                                 │
-│   ┌──────────────────────────────────┐                              │
-│   │  Private Subnet 10.10.1.0/24     │                              │
-│   │  ┌───────────────────────────┐   │                              │
-│   │  │ EC2 / ECS Production App  │   │                              │
-│   │  │  - Runs secure_log_       │   │                              │
-│   │  │    forwarder.py           │   │                              │
-│   │  │  - Assumes cross-VPC role │   │                              │
-│   │  │  - Sends KMS-encrypted    │   │                              │
-│   │  │    logs via VPC Peering   │   │                              │
-│   │  └───────────────────────────┘   │                              │
-│   │  SG: allow egress 5044/443       │                              │
-│   │       to VPC B CIDR only         │                              │
-│   └────────────┬─────────────────────┘                              │
-│                │                                                     │
-│         VPC Peering Connection                                       │
-│         (private, no internet)                                       │
-│         VPC Flow Logs → CloudWatch                                   │
-│                │                                                     │
-│   VPC B — SECURITY OPERATIONS (10.20.0.0/16)                       │
-│   ┌──────────────────────────────────┐                              │
-│   │  Private Subnet 10.20.1.0/24     │                              │
-│   │  SG: allow ingress 5044/443      │                              │
-│   │       from VPC A CIDR only       │                              │
-│   │                                  │                              │
-│   │  ┌───────────────────────────┐   │                              │
-│   │  │ S3 SecOps Log Bucket      │   │                              │
-│   │  │  - KMS SSE-KMS encrypted  │   │                              │
-│   │  │  - HTTPS-only policy      │   │                              │
-│   │  │  - Versioned              │   │                              │
-│   │  │  - 90-day flow log audit  │   │                              │
-│   │  └───────────────────────────┘   │                              │
-│   └──────────────────────────────────┘                              │
-│                                                                      │
-│   ┌──────────────────────────────────┐                              │
-│   │  KMS Key (alias/wbh-secure-comms)│                              │
-│   │  - AES-256, auto-rotation ON     │                              │
-│   │  - Encrypts: S3, CloudWatch Logs │                              │
-│   └──────────────────────────────────┘                              │
-└──────────────────────────────────────────────────────────────────────┘
+artisan-gem-works/
+├── index.html   ← Main storefront (open this in your browser)
+├── style.css    ← Southern charm theme
+├── data.js      ← All 32 products with pricing
+├── app.js       ← Cart, checkout, tracking & email logic
+└── admin.html   ← Admin portal
 ```
 
 ---
 
-## Security Controls — Defense in Depth
+## Access the Demo
 
-| Layer | Control | Implementation |
-|---|---|---|
-| **Network** | VPC Peering (no public internet) | `aws_vpc_peering_connection` |
-| **Network** | Zero Trust SGs (deny all by default) | Explicit ingress/egress CIDR rules only |
-| **Network** | VPC Flow Logs (ALL traffic) | CloudWatch Logs, 90-day KMS-encrypted retention |
-| **Identity** | STS AssumeRole with ExternalId | Prevents confused deputy attacks |
-| **Identity** | Least-privilege IAM policy | Only `s3:PutObject` to specific prefix |
-| **Data at Rest** | KMS SSE-KMS on S3 | AES-256, customer-managed, auto-rotate |
-| **Data in Transit** | S3 HTTPS-only bucket policy | `aws:SecureTransport: false → Deny` |
-| **Data in Transit** | VPC Peering (private AWS backbone) | Never traverses public internet |
-| **Integrity** | SHA-256 hash in S3 metadata | Verifies payload integrity post-upload |
-| **Monitoring** | CloudWatch alarm on rejected traffic | Detects lateral movement / misconfiguration |
-| **Audit** | S3 object versioning | Full log history, tamper evidence |
+The website runs entirely in your browser — no server required.
 
----
+**Open the storefront:**
+```
+artisan-gem-works/index.html
+```
+Double-click `index.html` in File Explorer, or drag it into any web browser.
 
-## Components
-
-| Resource | Description |
-|---|---|
-| `aws_kms_key` | Customer-managed encryption key, auto-rotation enabled |
-| `aws_vpc` (x2) | Production and SecOps VPCs, fully isolated |
-| `aws_vpc_peering_connection` | Private encrypted channel between VPCs |
-| `aws_route` (x2) | Bidirectional routing through peering only |
-| `aws_security_group` (x2) | Zero Trust SGs — deny all, explicit CIDR allows |
-| `aws_flow_log` (x2) | ALL traffic captured to CloudWatch (KMS encrypted) |
-| `aws_iam_role` | Cross-VPC role with ExternalId + least-privilege policy |
-| `aws_s3_bucket` | SecOps log bucket: KMS, HTTPS-only, versioned, private |
-| `aws_cloudwatch_metric_alarm` | Alert on rejected traffic spikes |
-
----
-
-## Prerequisites
-
-| Tool | Source |
-|---|---|
-| Terraform >= 1.6 | https://developer.hashicorp.com/terraform/install |
-| AWS CLI >= 2.x | https://aws.amazon.com/cli/ |
-| Python >= 3.9 | https://python.org |
-| boto3, cryptography | `pip install boto3 cryptography` |
-
----
-
-## Quick Start
-
-```bash
-# 1. Deploy infrastructure
-cd project3-secure-cloud-comms
-terraform init
-terraform plan -out=tfplan
-terraform apply tfplan
-
-# 2. Get outputs
-terraform output
-
-# 3. Run the secure log forwarder (from a VPC A workload)
-python secure_log_forwarder.py \
-  --role-arn $(terraform output -raw cross_vpc_role_arn) \
-  --bucket   $(terraform output -raw secops_log_bucket) \
-  --kms-key-id $(terraform output -raw kms_key_id) \
-  --verify
-
-# 4. Verify logs arrived in SecOps bucket
-aws s3 ls s3://$(terraform output -raw secops_log_bucket)/prod-logs/ --recursive
-
-# 5. Check VPC Flow Logs for traffic evidence
-aws logs describe-log-streams \
-  --log-group-name /aws/vpc/wbh-secure-comms/vpc-a/flow-logs
+**Open the admin portal:**
+```
+artisan-gem-works/admin.html
 ```
 
 ---
 
-## Key Learning Outcomes
+## How to Test the Demo
 
-- VPC Peering: private cross-VPC routing without internet exposure
-- KMS customer-managed keys: creation, rotation, key policies
-- IAM STS AssumeRole with ExternalId (confused deputy prevention)
-- Least-privilege IAM policies scoped to S3 key prefixes
-- VPC Flow Logs for full traffic audit and threat detection
-- S3 bucket policies enforcing HTTPS-only access
-- SHA-256 integrity verification for data in transit
-- CloudWatch alarms for anomaly detection on network reject events
+Follow these steps to experience the full purchase flow:
+
+### Step 1 — Browse the Store
+1. Open `index.html` in your browser
+2. Use the **category chips** at the top to filter by jewelry type (Rings, Pendants, Earrings, etc.)
+3. Click any product card to open the **quick-view modal** with full details and pricing
+
+### Step 2 — Add Items to Your Bag
+1. Click **"+ Add"** on any product card, or open the product modal and click **"Add to Bag"**
+2. A toast notification confirms the item was added
+3. Click the **bag icon** (top right) to open your cart drawer
+
+### Step 3 — Checkout
+1. In the cart drawer, click **"Checkout"**
+2. Fill in any name, email, and shipping address (e.g. `123 Magnolia Lane, Charleston, SC`)
+3. For payment, use the **test card:**
+   - **Card Number:** `4242 4242 4242 4242`
+   - **Expiry:** any future date (e.g. `12/28`)
+   - **CVV:** any 3 digits (e.g. `123`)
+4. Click **"Place My Order"**
+
+### Step 4 — View Order Confirmation & Tracking
+1. After ~2 seconds you land on the **Order Confirmation** page
+2. Your order ID (e.g. `AGW-20260611-4821`) and a **FedEx tracking number** are displayed
+3. A **7-step delivery timeline** shows your order progressing from *Order Placed* → *Delivered*
+
+### Step 5 — View the Confirmation Email
+1. An **email preview modal** pops up automatically after checkout
+2. It shows a formatted email from `shop@artisangemworks.com` to your provided address
+3. You can reopen it anytime from the confirmation page by clicking **"View Email"**
+
+### Step 6 — Admin Portal
+1. Open `admin.html` (or click **"Admin Portal"** in the store footer)
+2. Log in with:
+   - **Email:** `admin@artisangemworks.com`
+   - **Password:** `Admin!2024Secure`
+3. From the dashboard you can:
+   - View all orders placed during your session
+   - Update order status (Processing → Shipped → Delivered)
+   - Browse all 32 products
+   - See customer list and sales analytics
+   - Export orders as CSV
 
 ---
 
-## Open-Source References
+## Demo Credentials
 
-- [AWS VPC Peering Guide](https://docs.aws.amazon.com/vpc/latest/peering/what-is-vpc-peering.html)
-- [AWS KMS Developer Guide](https://docs.aws.amazon.com/kms/latest/developerguide/)
-- [STS AssumeRole ExternalId Best Practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html)
-- [VPC Flow Logs](https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.html)
-- [S3 Security Best Practices](https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html)
-- [NIST 800-53 SC Family (System & Comms Protection)](https://csrc.nist.gov/projects/cprt/catalog#/cprt/framework/version/SP_800_53_5_1_0/home)
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | `admin@artisangemworks.com` | `Admin!2024Secure` |
+| Customer | `customer@demo.com` | `Customer!2024Demo` |
+| Test Card | `4242 4242 4242 4242` | Any future expiry + any CVV |
+
+> Orders and cart data are stored in your browser's `localStorage` and persist between sessions.
+
+---
+
+*Artisan Gem Works · A Meridian Jewelry Group Brand · Crafted with Southern Love*
